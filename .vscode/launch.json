@@ -12,6 +12,14 @@
             "program": "src/train",
             "console": "integratedTerminal",
             "args": []
+        },
+        {
+            "name": "Debug aws train",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "aws-train.py",
+            "console": "integratedTerminal",
+            "args": []
         }
     ]
 }

@@ -5,5 +5,7 @@ torch==2.6.0+cpu
 torchvision==0.21.0+cpu
 typing-inspection==0.4.0
 typing_extensions==4.13.2
+boto3==1.38.3
+sagemaker==2.243.3
 --index-url https://pypi.org/simple
 --extra-index-url https://download.pytorch.org/whl/cpu
