@@ -4,7 +4,7 @@ from sagemaker.estimator import Estimator
 
 role = "arn:aws:iam::905418352696:role/SageMakerFullAccess"
 boto_session = boto3.session.Session(profile_name="905418352696_AdministratorAccess", region_name="us-east-1")
-sagemaker_session = sagemaker.Session(boto_session=boto_session)
+sagemaker_session = sagemaker.Session(boto_session=boto_session, default_bucket="s3://rodions-object-detection")
 my_region = boto_session.region_name
 my_image_uri = (
     "763104351884.dkr.ecr."
