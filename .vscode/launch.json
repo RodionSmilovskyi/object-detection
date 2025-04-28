@@ -6,12 +6,17 @@
     "configurations": [
 
         {
-            "name": "Debug train",
+            "name": "Debug local train",
             "type": "debugpy",
             "request": "launch",
-            "program": "src/train",
+            "program": "src/train.py",
             "console": "integratedTerminal",
-            "args": []
+            "args": [
+                "--epochs",
+                "1",
+                "--rounds",
+                "1"
+            ]
         },
         {
             "name": "Debug aws train",
@@ -19,7 +24,13 @@
             "request": "launch",
             "program": "aws-train.py",
             "console": "integratedTerminal",
-            "args": []
+            "args": [
+                "--prefix",
+                "object-detection",
+                "--job-name",
+                "ssdlite-640-640",
+                "--upload-training-data"
+            ]
         }
     ]
 }
