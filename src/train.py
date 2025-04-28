@@ -13,7 +13,7 @@ from common import load_labels_from_json, make_ssdlite_model
 WORKDIR = os.path.dirname(os.path.abspath(__file__))
 
 def train(params):
-    labels = load_labels_from_json(os.path.join(params["input_dir"], "classes.json"))
+    labels = load_labels_from_json(os.path.join(params["config_dir"], "classes.json"))
     model = make_ssdlite_model(labels)
     
     print('Obtained model')
@@ -42,8 +42,8 @@ def train(params):
     trainable_params = [p for p in model.parameters() if p.requires_grad]
     optimizer = T.optim.SGD(trainable_params, lr=params["lr"])
     scheduler = T.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max= params["rounds"] * params["epochs"], eta_min=0.01)
-    train_dir = os.path.join(params["input_dir"], "train")
-    train_dir = os.path.join(params["input_dir"], "validation")
+    train_dir = params["train_dir"]
+    train_dir = params["validation_dir"]
     
     for round in range(params["rounds"]):
         train_dataset = YoloDataset(train_dir, labels, train_transform)
@@ -69,7 +69,6 @@ def train(params):
             )
             scheduler.step()
             evaluate(model, data_loader_test, device=params["device"])
-            print(round, epoch)
             
         images, _ = next(iter(data_loader_train))
         model_name = f"model_{params["final_height"]}_{params["final_width"]}.onnx"
@@ -86,7 +85,7 @@ if __name__ == "__main__":
         print("No CUDA-enabled GPU is available.")
     
     parser = argparse.ArgumentParser()
-    parser.add_argument("--epochs", type=int, default=50)
+    parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--lr", type=float, default=0.15)
     parser.add_argument("--width", type=int, default=640)
@@ -106,11 +105,18 @@ if __name__ == "__main__":
         
     if not os.path.exists(os.environ["SM_MODEL_DIR"]):
         os.makedirs(os.environ["SM_MODEL_DIR"])
+        
+    checkpoint_dir = os.environ["CHECKPOINT_DIR"] if "CHECKPOINT_DIR" in os.environ else "/opt/ml/checkpoints"
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
     
     train({
-        "input_dir": os.path.join(os.environ["SM_INPUT_DIR"], "data"),
+        "train_dir": os.path.join(os.environ["SM_CHANNEL_TRAIN"]),
+        "validation_dir": os.path.join(os.environ["SM_CHANNEL_VALIDATION"]),
+        "config_dir": os.path.join(os.environ["SM_CHANNEL_CONFIG"]),
         "output_dir": os.environ["SM_OUTPUT_DIR"],
         "model_dir": os.environ["SM_MODEL_DIR"],
+        "checkpoint_dir": checkpoint_dir,
         "batch_size": args.batch_size,
         "final_height": args.height,
         "final_width": args.width,
