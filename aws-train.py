@@ -36,10 +36,9 @@ if __name__ == "__main__":
         output_path=output_path,
         checkpoint_s3_uri=checkpoint_path,
         environment={"PYTHONPATH": "/opt/ml/code/detection"},
-        container_arguments=[
-            "--epochs",
-            "50"
-        ],
+        hyperparameters={
+            "epochs": "1"
+        },
     )
 
     if args.upload_training_data:

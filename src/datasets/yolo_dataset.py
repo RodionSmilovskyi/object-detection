@@ -51,12 +51,13 @@ def detection_collate_fn(batch):
     return images, targets
 
 class YoloDataset(Dataset):
-    def __init__(self, root, labels, transforms):
+    def __init__(self, root, labels, transforms, device):
         self.root = root
         self.transforms = transforms
         self.labels = labels
         self.annotations = []
         self.imgs = []
+        self.device = device
         image_extensions = [".jpg", ".jpeg"]
         
         for label in labels:
@@ -76,7 +77,7 @@ class YoloDataset(Dataset):
     
     def __getitem__(self, idx):
         img = read_image(self.imgs[idx], mode=ImageReadMode.RGB)
-        img = tv_tensors.Image(img)
+        img = tv_tensors.Image(img, device=self.device)
         labels = []
         boxes = []
         areas = []
@@ -99,12 +100,12 @@ class YoloDataset(Dataset):
         iscrowd = T.zeros((len(boxes),), dtype=T.int64)
 
         target = {
-            "labels": T.LongTensor(labels),
+            "labels": T.tensor(labels, dtype=T.long, device = self.device),
             "boxes": tv_tensors.BoundingBoxes(
-                boxes, format="XYXY", canvas_size=F.get_size(img)
+                boxes, format="XYXY", canvas_size=F.get_size(img), device=self.device
             ),
             "image_id": idx,
-            "area": T.FloatTensor(areas),
+            "area": T.tensor(areas, dtype=T.float32, device=self.device),
             "iscrowd": iscrowd,
         }
 

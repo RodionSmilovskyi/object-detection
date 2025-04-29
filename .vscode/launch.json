@@ -28,8 +28,7 @@
                 "--prefix",
                 "object-detection",
                 "--job-name",
-                "ssdlite-640-640",
-                "--upload-training-data"
+                "ssdlite-640-640"
             ]
         }
     ]
