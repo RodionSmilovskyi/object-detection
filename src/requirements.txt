@@ -3,3 +3,5 @@ onnxruntime==1.19.2
 onnxscript==0.1.0.dev20241001
 torchvision==0.21.0
 pycocotools==2.0.8
+albumentations==2.0.5
+opencv-python-headless==4.11.0.86

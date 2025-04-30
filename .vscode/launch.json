@@ -15,7 +15,9 @@
                 "--epochs",
                 "1",
                 "--rounds",
-                "1"
+                "2",
+                "--samples-per-image",
+                "5"
             ]
         },
         {

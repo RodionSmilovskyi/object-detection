@@ -37,7 +37,9 @@ if __name__ == "__main__":
         checkpoint_s3_uri=checkpoint_path,
         environment={"PYTHONPATH": "/opt/ml/code/detection"},
         hyperparameters={
-            "epochs": "1"
+            "epochs": "10",
+            "rounds": "5",
+            "samples-per-image":"15" 
         },
     )
 

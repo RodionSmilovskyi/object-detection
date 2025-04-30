@@ -3,6 +3,8 @@ onnxruntime==1.19.2
 onnxscript==0.1.0.dev20241001
 torch==2.6.0+cpu
 torchvision==0.21.0+cpu
+albumentations==2.0.5
+opencv-python-headless==4.11.0.86
 typing-inspection==0.4.0
 typing_extensions==4.13.2
 boto3==1.38.3

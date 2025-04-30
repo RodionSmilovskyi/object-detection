@@ -8,7 +8,7 @@ from torchvision.transforms import v2
 from torch.utils.data import DataLoader
 from datasets.yolo_dataset import YoloDataset, detection_collate_fn
 from detection.engine import evaluate, train_one_epoch
-from common import load_labels_from_json, make_ssdlite_model
+from common import generate_samples, load_labels_from_json, make_ssdlite_model
 
 WORKDIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -46,11 +46,13 @@ def train(params):
         optimizer, T_max=params["rounds"] * params["epochs"], eta_min=0.01
     )
     train_dir = params["train_dir"]
-    train_dir = params["validation_dir"]
+    test_dir = params["validation_dir"]
 
     for round in range(params["rounds"]):
+        generate_samples(train_dir, params["tmp_dir"], os.path.join(params["config_dir"], "classes.json"), params["final_height"], params["final_width"], params["samples_per_image"])
+        
         train_dataset = YoloDataset(
-            train_dir, labels, train_transform, params["device"]
+            params["tmp_dir"], labels, train_transform, params["device"]
         )
         data_loader_train = DataLoader(
             train_dataset,
@@ -59,7 +61,8 @@ def train(params):
             shuffle=True,
             drop_last=True,
         )
-        test_dataset = YoloDataset(train_dir, labels, test_transforms, params["device"])
+        
+        test_dataset = YoloDataset(test_dir, labels, test_transforms, params["device"])
         data_loader_test = DataLoader(
             test_dataset,
             batch_size=2,
@@ -108,6 +111,7 @@ if __name__ == "__main__":
     parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--height", type=int, default=640)
     parser.add_argument("--batch-size", type=int, default=24)
+    parser.add_argument("--samples-per-image", type=int, default=1)
     args = parser.parse_args()
 
     print(f"Training rounds {args.rounds}")
@@ -116,6 +120,7 @@ if __name__ == "__main__":
     print(f"Batch size {args.batch_size}")
     print(f"Final image width {args.width}")
     print(f"Final image height {args.height}")
+    print(f"Samples per image {args.samples_per_image}")
 
     if not os.path.exists(os.environ["SM_OUTPUT_DIR"]):
         os.makedirs(os.environ["SM_OUTPUT_DIR"])
@@ -150,6 +155,7 @@ if __name__ == "__main__":
             "epochs": args.epochs,
             "rounds": args.rounds,
             "lr": args.lr,
+            "samples_per_image": args.samples_per_image,
             "device": device,
         }
     )
