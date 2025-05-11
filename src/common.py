@@ -16,9 +16,9 @@ from torchvision.models.detection.ssdlite import (
 from transforms.add_random_background import BACKGROUND_DIR, AddRandomBackground
 from transforms.merge_images import merge_images_horizontally, read_annotation
 
-def make_ssdlite_model(labels):
+def make_ssdlite_model(labels, trainable_backbone_layers = 0):
     num_classes = len(labels)
-    model = torchvision.models.detection.ssdlite320_mobilenet_v3_large(weight="COCO_V1", trainable_backbone_layers = 0)
+    model = torchvision.models.detection.ssdlite320_mobilenet_v3_large(weight="COCO_V1", trainable_backbone_layers = trainable_backbone_layers)
     out_channels = retrieve_out_channels(model.backbone, (320, 320))
     num_anchors = model.anchor_generator.num_anchors_per_location()
     classification_head = SSDLiteClassificationHead(
@@ -66,10 +66,8 @@ def remove_directory_contents(directory_path):
             item_path = os.path.join(directory_path, item)
             if os.path.isfile(item_path):
                 os.remove(item_path)
-                print(f"Removed file: {item_path}")
             elif os.path.isdir(item_path):
                 shutil.rmtree(item_path)
-                print(f"Removed directory: {item_path}")
         print(f"Successfully removed all contents from: {directory_path}")
     except FileNotFoundError:
         print(f"Error: Directory not found: {directory_path}")
@@ -108,7 +106,6 @@ def write_lines_to_file(filepath, lines):
         with open(filepath, "w") as f:  # 'w' mode for writing (overwrites if exists)
             for line in lines:
                 f.write(line + "\n")  # Add a newline character after each line
-        print(f"Successfully wrote {len(lines)} lines to '{filepath}'")
     except Exception as e:
         print(f"An error occurred while writing to '{filepath}': {e}")
         
@@ -135,11 +132,11 @@ def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1)
                 scale=(0.6, 1.2),  # Zoom in/out by 80-120%
                 rotate=(-360, 360),  # Rotate by -15 to +15 degrees
                 translate_percent=(0.05, 0.05),  # Optional: translate by 0-10%
-                shear=(-2, 2),  # Optional: shear by -10 to +10 degrees
-                p=0.5,
+                shear=(-5, 5),  # Optional: shear by -10 to +10 degrees
             ),
+            A.Downscale(scale_range=(0.1, 0.75), interpolation_pair={'downscale': cv2.INTER_NEAREST, 'upscale': cv2.INTER_LINEAR}),
             A.CoarseDropout(num_holes_range=(1, 2)),
-            AddRandomBackground(background_images, p=0.5),
+            AddRandomBackground(background_images),
             A.Resize(height, width, p=1),
         ],
         bbox_params=A.BboxParams("yolo", ["class_labels"]),
@@ -190,3 +187,13 @@ def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1)
             )
             save_transform(augmented_image, category_ids, target_dir, f"{fn}-{i}")
     
+class UintSsdLite(T.nn.Module):
+    def __init__(self, ssd_lite_model):
+        super().__init__()
+        self.ssd_lite_model = ssd_lite_model
+        
+    def forward(self, img_uint8: T.tensor):
+        image_float = img_uint8.to(T.float32)
+        image_float = image_float / 255.0
+        
+        return self.ssd_lite_model.forward(image_float)

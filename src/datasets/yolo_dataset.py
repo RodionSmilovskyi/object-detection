@@ -51,26 +51,24 @@ def detection_collate_fn(batch):
     return images, targets
 
 class YoloDataset(Dataset):
-    def __init__(self, root, labels, transforms, device):
+    def __init__(self, root, transforms, device):
         self.root = root
         self.transforms = transforms
-        self.labels = labels
         self.annotations = []
         self.imgs = []
         self.device = device
         image_extensions = [".jpg", ".jpeg"]
         
-        for label in labels:
-            workdir = self.root
-            text_files = [f for f in os.listdir(workdir) if f.endswith(".txt") and f != 'classes.txt']
+        workdir = self.root
+        text_files = [f for f in os.listdir(workdir) if f.endswith(".txt") and f != 'classes.txt']
 
-            for tf in text_files:
-                fn, ext = os.path.splitext(os.path.basename(tf))
+        for tf in text_files:
+            fn, ext = os.path.splitext(os.path.basename(tf))
 
-                for ie in image_extensions:
-                    if os.path.exists(os.path.join(workdir, fn + f"{ie}")):
-                        self.annotations.append(os.path.join(workdir, tf))
-                        self.imgs.append(os.path.join(workdir, fn + f"{ie}"))
+            for ie in image_extensions:
+                if os.path.exists(os.path.join(workdir, fn + f"{ie}")):
+                    self.annotations.append(os.path.join(workdir, tf))
+                    self.imgs.append(os.path.join(workdir, fn + f"{ie}"))
                         
     def __len__(self):
         return len(self.imgs)

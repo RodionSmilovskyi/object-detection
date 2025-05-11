@@ -15,9 +15,11 @@
                 "--epochs",
                 "1",
                 "--rounds",
-                "2",
+                "1",
                 "--samples-per-image",
-                "5"
+                "1",
+                "--trainable-backbone-layers",
+                "0"
             ]
         },
         {
@@ -30,7 +32,15 @@
                 "--prefix",
                 "object-detection",
                 "--job-name",
-                "ssdlite-640-640"
+                "ssdlite-trainable-backbone-0-640-640-1-50",
+                "--epochs",
+                "50",
+                "--rounds",
+                "2",
+                "--samples-per-image",
+                "25",
+                "--trainable-backbone-layers",
+                "0"
             ]
         }
     ]

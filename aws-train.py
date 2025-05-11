@@ -12,6 +12,15 @@ if __name__ == "__main__":
     parser.add_argument("--prefix", type=str, default=None)
     parser.add_argument("--job-name", type=str, default=None)
     parser.add_argument("--upload-training-data", action="store_true")
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--rounds", type=int, default=1)
+    parser.add_argument("--lr", type=float, default=0.15)
+    parser.add_argument("--width", type=int, default=640)
+    parser.add_argument("--height", type=int, default=640)
+    parser.add_argument("--batch-size", type=int, default=24)
+    parser.add_argument("--samples-per-image", type=int, default=1)
+    parser.add_argument("--trainable-backbone-layers", type=int, default=0)
+
     args = parser.parse_args()
 
     boto_session = boto3.session.Session(
@@ -37,9 +46,10 @@ if __name__ == "__main__":
         checkpoint_s3_uri=checkpoint_path,
         environment={"PYTHONPATH": "/opt/ml/code/detection"},
         hyperparameters={
-            "epochs": "10",
-            "rounds": "5",
-            "samples-per-image":"15" 
+            "epochs": args.epochs,
+            "rounds": args.rounds,
+            "samples-per-image": args.samples_per_image,
+            "trainable-backbone-layers": args.trainable_backbone_layers,
         },
     )
 

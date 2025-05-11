@@ -5,3 +5,4 @@ torchvision==0.21.0
 pycocotools==2.0.8
 albumentations==2.0.5
 opencv-python-headless==4.11.0.86
+matplotlib==3.10.1
