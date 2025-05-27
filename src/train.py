@@ -9,25 +9,38 @@ import matplotlib.pyplot as plt
 from torchvision.transforms import v2
 from torch.utils.data import DataLoader
 from torchvision.utils import draw_bounding_boxes
+from torch.utils.tensorboard import SummaryWriter
 from datasets.yolo_dataset import YoloDataset, detection_collate_fn
 from detection.engine import evaluate, train_one_epoch
-from common import UintSsdLite, generate_samples, load_labels_from_json, make_ssdlite_model, remove_directory_contents
+from common import (
+    UintSsdLite,
+    generate_samples,
+    load_labels_from_json,
+    make_ssdlite_model,
+    remove_directory_contents,
+)
 
 WORKDIR = os.path.dirname(os.path.abspath(__file__))
 
 
 def train(params):
+    writer = SummaryWriter(os.path.join(params["tensorboard_dir"], params["prefix"]))
     labels = load_labels_from_json(os.path.join(params["config_dir"], "classes.json"))
     model = make_ssdlite_model(labels, params["trainable_backbone_layers"])
 
     print("Obtained model")
+    
+    writer.add_text("run", "Test")
 
     train_transform = v2.Compose(
         [
-            v2.RandomRotation(degrees=15),
-            v2.RandomHorizontalFlip(),
-            v2.RandomVerticalFlip(),
-            v2.ColorJitter(brightness=(0.8, 1.2), contrast=(0.8, 1.2), saturation=(0.8, 1.2), hue=(-0.03, 0.03)),
+            v2.RandomAffine(degrees=15, scale=(0.8, 1.2), shear=2),
+            v2.ColorJitter(
+                brightness=(0.95, 1.05),
+                contrast=(0.95, 1.05),
+                saturation=(0.9, 1.05),
+                hue=(-0.03, 0.03),
+            ),
             v2.SanitizeBoundingBoxes(),
             v2.Resize(size=[params["final_height"], params["final_width"]]),
             v2.ToDtype(T.float, scale=True),
@@ -53,10 +66,19 @@ def train(params):
     )
     train_dir = params["train_dir"]
     test_dir = params["validation_dir"]
+    
+    global_step = 0
 
     for round in range(params["rounds"]):
-        generate_samples(train_dir, params["tmp_dir"], os.path.join(params["config_dir"], "classes.json"), params["final_height"], params["final_width"], params["samples_per_image"])
-        
+        generate_samples(
+            train_dir,
+            params["tmp_dir"],
+            os.path.join(params["config_dir"], "classes.json"),
+            params["final_height"],
+            params["final_width"],
+            params["samples_per_image"],
+        )
+
         train_dataset = YoloDataset(
             params["tmp_dir"], train_transform, params["device"]
         )
@@ -67,7 +89,7 @@ def train(params):
             shuffle=True,
             drop_last=True,
         )
-        
+
         test_dataset = YoloDataset(test_dir, test_transforms, params["device"])
         data_loader_test = DataLoader(
             test_dataset,
@@ -78,7 +100,7 @@ def train(params):
         )
 
         for epoch in range(params["epochs"]):
-            train_one_epoch(
+            ml = train_one_epoch(
                 model,
                 optimizer,
                 data_loader_train,
@@ -88,11 +110,21 @@ def train(params):
             )
             scheduler.step()
             report = evaluate(model, data_loader_test, device=params["device"])
+            
+            writer.add_scalar("train/box_regression", ml.meters["bbox_regression"].avg, global_step)
+            writer.add_scalar("train/classification", ml.meters["classification"].avg, global_step)
+            writer.add_scalar("train/loss", ml.meters["loss"].avg, global_step)
+            writer.add_scalar("eval/avg_precision", report.coco_eval["bbox"].stats[0], global_step)
+            writer.add_scalar("eval/avg_recall", report.coco_eval["bbox"].stats[8], global_step)
+            
+            global_step = global_step + 1
             pass
 
     model.to(T.device("cpu"))
     dummy_float_image = T.zeros(
-        (1, 3, params["final_height"], params["final_width"]), device=T.device("cpu"), dtype=T.float32
+        (1, 3, params["final_height"], params["final_width"]),
+        device=T.device("cpu"),
+        dtype=T.float32,
     )
 
     model_name = f"model_{params["final_height"]}_{params["final_width"]}.onnx"
@@ -102,24 +134,29 @@ def train(params):
         os.path.join(params["model_dir"], model_name),
         opset_version=18,
     )
-    
+
     uint_model = UintSsdLite(model)
-    unit_model_name = f"model_uint8_{params["final_height"]}_{params["final_width"]}.onnx"
+    unit_model_name = (
+        f"model_uint8_{params["final_height"]}_{params["final_width"]}.onnx"
+    )
     dummy_uint_image = T.zeros(
-        (1, 3, params["final_height"], params["final_width"]), device=T.device("cpu"), dtype=T.uint8
+        (1, 3, params["final_height"], params["final_width"]),
+        device=T.device("cpu"),
+        dtype=T.uint8,
     )
     T.onnx.export(
         uint_model,
         (dummy_uint_image,),
         os.path.join(params["model_dir"], unit_model_name),
         opset_version=18,
-        input_names=["images"]
+        input_names=["images"],
     )
-    
-    check_inference(params)
-    check_unit_inference(params)
 
-def check_inference(params):
+    check_inference(params, writer)
+    check_unit_inference(params, writer)
+
+
+def check_inference(params, writer: SummaryWriter):
     labels = load_labels_from_json(os.path.join(params["config_dir"], "classes.json"))
     model_name = f"model_{params["final_height"]}_{params["final_width"]}.onnx"
     transforms = v2.Compose(
@@ -133,14 +170,14 @@ def check_inference(params):
         os.path.join(params["model_dir"], model_name),
         providers=["CPUExecutionProvider"],
     )
-    
+
     inference_dir = os.path.join(params["output_dir"], "data", "float32")
-    
+
     if not os.path.exists(inference_dir):
         os.makedirs(inference_dir)
     else:
         remove_directory_contents(inference_dir)
-    
+
     for image_idx, (image, _) in enumerate(test_dataset):
         inputs = {"images": image.unsqueeze(0).numpy()}
         output = ort_session.run(None, inputs)
@@ -158,9 +195,11 @@ def check_inference(params):
         )
         plt.figure(figsize=(12, 12))
         plt.imshow(output_image.permute(1, 2, 0))
-        plt.savefig(os.path.join(inference_dir, f'{image_idx}.jpg'))
+        plt.savefig(os.path.join(inference_dir, f"{image_idx}.jpg"))
+        writer.add_image(f"validation/float_{image_idx}", output_image)
 
-def check_unit_inference(params):
+
+def check_unit_inference(params, writer: SummaryWriter):
     labels = load_labels_from_json(os.path.join(params["config_dir"], "classes.json"))
     model_name = f"model_uint8_{params["final_height"]}_{params["final_width"]}.onnx"
     transforms = v2.Compose(
@@ -173,13 +212,13 @@ def check_unit_inference(params):
         os.path.join(params["model_dir"], model_name),
         providers=["CPUExecutionProvider"],
     )
-    
+
     inference_dir = os.path.join(params["output_dir"], "data", "uint8")
     if not os.path.exists(inference_dir):
         os.makedirs(inference_dir)
     else:
         remove_directory_contents(inference_dir)
-    
+
     for image_idx, (image, _) in enumerate(test_dataset):
         inputs = {"images": image.unsqueeze(0).numpy()}
         output = ort_session.run(None, inputs)
@@ -197,7 +236,10 @@ def check_unit_inference(params):
         )
         plt.figure(figsize=(12, 12))
         plt.imshow(output_image.permute(1, 2, 0))
-        plt.savefig(os.path.join(inference_dir, f'{image_idx}.jpg'))
+        plt.savefig(os.path.join(inference_dir, f"{image_idx}.jpg"))
+        writer.add_image(f"validation/uint_{image_idx}", output_image)
+        
+
 
 if __name__ == "__main__":
     device = T.device("cuda") if T.cuda.is_available() else T.device("cpu")
@@ -207,6 +249,7 @@ if __name__ == "__main__":
         print("No CUDA-enabled GPU is available.")
 
     parser = argparse.ArgumentParser()
+    parser.add_argument("--prefix", type=str, default="")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--lr", type=float, default=0.15)
@@ -215,8 +258,10 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=24)
     parser.add_argument("--samples-per-image", type=int, default=1)
     parser.add_argument("--trainable-backbone-layers", type=int, default=0)
+    parser.add_argument("--comment", type=str, default="")
     args = parser.parse_args()
 
+    print(f"Prefix {args.prefix}")
     print(f"Training rounds {args.rounds}")
     print(f"Training epochs {args.epochs}")
     print(f"Learning rate {args.lr}")
@@ -225,6 +270,7 @@ if __name__ == "__main__":
     print(f"Final image height {args.height}")
     print(f"Samples per image {args.samples_per_image}")
     print(f"Trainable backbone layers {args.trainable_backbone_layers}")
+    print(f"Comment {args.comment}")
 
     if not os.path.exists(os.environ["SM_OUTPUT_DIR"]):
         os.makedirs(os.environ["SM_OUTPUT_DIR"])
@@ -240,18 +286,26 @@ if __name__ == "__main__":
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
 
+    tensorboard_dir = (
+        os.environ["TENSORBOARD_DIR"]
+        if "TENSORBOARD_DIR" in os.environ
+        else "/opt/ml/output/tensorboard"
+    )
+
     tmp_dir = os.environ["TMP_DIR"] if "TMP_DIR" in os.environ else "/tmp"
     if not os.path.exists(tmp_dir):
         os.makedirs(tmp_dir)
 
     train(
         {
+            "prefix": args.prefix,
             "train_dir": os.path.join(os.environ["SM_CHANNEL_TRAIN"]),
             "validation_dir": os.path.join(os.environ["SM_CHANNEL_VALIDATION"]),
             "config_dir": os.path.join(os.environ["SM_CHANNEL_CONFIG"]),
             "output_dir": os.environ["SM_OUTPUT_DIR"],
             "model_dir": os.environ["SM_MODEL_DIR"],
             "checkpoint_dir": checkpoint_dir,
+            "tensorboard_dir": tensorboard_dir,
             "tmp_dir": tmp_dir,
             "batch_size": args.batch_size,
             "final_height": args.height,
@@ -261,6 +315,7 @@ if __name__ == "__main__":
             "trainable_backbone_layers": args.trainable_backbone_layers,
             "lr": args.lr,
             "samples_per_image": args.samples_per_image,
+            "comment": args.comment,
             "device": device,
         }
     )

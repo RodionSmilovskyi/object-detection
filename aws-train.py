@@ -3,6 +3,7 @@ import argparse
 import boto3
 import sagemaker
 from sagemaker.estimator import Estimator
+from sagemaker.debugger import TensorBoardOutputConfig
 
 WORKDIR = os.path.dirname(os.path.abspath(__file__))
 ROLE = "arn:aws:iam::905418352696:role/SageMakerFullAccess"
@@ -20,6 +21,7 @@ if __name__ == "__main__":
     parser.add_argument("--batch-size", type=int, default=24)
     parser.add_argument("--samples-per-image", type=int, default=1)
     parser.add_argument("--trainable-backbone-layers", type=int, default=0)
+    parser.add_argument("--comment", type=str, default="")
 
     args = parser.parse_args()
 
@@ -45,11 +47,15 @@ if __name__ == "__main__":
         output_path=output_path,
         checkpoint_s3_uri=checkpoint_path,
         environment={"PYTHONPATH": "/opt/ml/code/detection"},
+        tensorboard_output_config=TensorBoardOutputConfig(
+            s3_output_path=f"s3://{sagemaker_session.default_bucket()}/{args.prefix}/tensorboard"
+        ),
         hyperparameters={
             "epochs": args.epochs,
             "rounds": args.rounds,
             "samples-per-image": args.samples_per_image,
             "trainable-backbone-layers": args.trainable_backbone_layers,
+            "comment": args.comment
         },
     )
 
