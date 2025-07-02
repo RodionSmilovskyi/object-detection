@@ -14,6 +14,7 @@ if __name__ == "__main__":
     parser.add_argument("--job-name", type=str, default=None)
     parser.add_argument("--upload-training-data", action="store_true")
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--lr", type=float, default=0.15)
     parser.add_argument("--width", type=int, default=640)
@@ -53,6 +54,7 @@ if __name__ == "__main__":
         hyperparameters={
             "epochs": args.epochs,
             "rounds": args.rounds,
+            "seed": args.seed,
             "samples-per-image": args.samples_per_image,
             "trainable-backbone-layers": args.trainable_backbone_layers,
             "comment": args.comment

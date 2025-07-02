@@ -5,6 +5,7 @@ from torchvision import tv_tensors
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms.v2 import functional as F
 
+
 def cxcywh_to_xyxy(cx, cy, w, h):
     """
     Converts bounding box coordinates from center-x, center-y, width, height (cxcywh)
@@ -24,6 +25,7 @@ def cxcywh_to_xyxy(cx, cy, w, h):
     x2 = cx + w / 2
     y2 = cy + h / 2
     return x1, y1, x2, y2
+
 
 def detection_collate_fn(batch):
     """
@@ -50,6 +52,7 @@ def detection_collate_fn(batch):
 
     return images, targets
 
+
 class YoloDataset(Dataset):
     def __init__(self, root, transforms, device):
         self.root = root
@@ -58,9 +61,11 @@ class YoloDataset(Dataset):
         self.imgs = []
         self.device = device
         image_extensions = [".jpg", ".jpeg"]
-        
+
         workdir = self.root
-        text_files = [f for f in os.listdir(workdir) if f.endswith(".txt") and f != 'classes.txt']
+        text_files = [
+            f for f in os.listdir(workdir) if f.endswith(".txt") and f != "classes.txt"
+        ]
 
         for tf in text_files:
             fn, ext = os.path.splitext(os.path.basename(tf))
@@ -69,10 +74,10 @@ class YoloDataset(Dataset):
                 if os.path.exists(os.path.join(workdir, fn + f"{ie}")):
                     self.annotations.append(os.path.join(workdir, tf))
                     self.imgs.append(os.path.join(workdir, fn + f"{ie}"))
-                        
+
     def __len__(self):
         return len(self.imgs)
-    
+
     def __getitem__(self, idx):
         img = read_image(self.imgs[idx], mode=ImageReadMode.RGB)
         img = tv_tensors.Image(img, device=self.device)
@@ -95,17 +100,37 @@ class YoloDataset(Dataset):
                 boxes.append([x1, y1, x2, y2])
                 areas.append(w * h)
 
-        iscrowd = T.zeros((len(boxes),), dtype=T.int64)
+        if len(boxes) > 0:
+            iscrowd = T.zeros((len(boxes),), dtype=T.int64)
 
-        target = {
-            "labels": T.tensor(labels, dtype=T.long, device = self.device),
-            "boxes": tv_tensors.BoundingBoxes(
-                boxes, format="XYXY", canvas_size=F.get_size(img), device=self.device
-            ),
-            "image_id": idx,
-            "area": T.tensor(areas, dtype=T.float32, device=self.device),
-            "iscrowd": iscrowd,
-        }
+            target = {
+                "labels": T.tensor(labels, dtype=T.long, device=self.device),
+                "boxes": tv_tensors.BoundingBoxes(
+                    boxes,
+                    format="XYXY",
+                    canvas_size=F.get_size(img),
+                    device=self.device,
+                ),
+                "image_id": idx,
+                "area": T.tensor(areas, dtype=T.float32, device=self.device),
+                "iscrowd": iscrowd,
+            }
+
+        else:
+            target = {
+                "boxes": T.empty(
+                    (0, 4), dtype=T.long, device=self.device
+                ),  # No boxes, so shape is (0, 4)
+                "labels": T.empty(
+                    0, dtype=T.long, device=self.device
+                ),  # No labels, so shape is (0,)
+                "image_id": idx,
+                "area": T.empty(0, dtype=T.float32),  # No areas
+                "iscrowd": T.empty(
+                    0, dtype=T.int64, device=self.device
+                ),  # No iscrowd flags
+                # Any other per-instance fields would also be empty tensors
+            }
 
         if self.transforms is not None:
             img, target = self.transforms(img, target)

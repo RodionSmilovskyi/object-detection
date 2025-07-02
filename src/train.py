@@ -5,6 +5,8 @@ import sys
 import torch as T
 import onnxruntime
 import argparse
+import random
+import numpy as np
 import matplotlib.pyplot as plt
 from torchvision.transforms import v2
 from torch.utils.data import DataLoader
@@ -30,18 +32,18 @@ def train(params):
 
     print("Obtained model")
     
-    writer.add_text("run", "Test")
+    writer.add_text("description", params["comment"])
 
     train_transform = v2.Compose(
         [
-            v2.RandomAffine(degrees=15, scale=(0.8, 1.2), shear=2),
-            v2.ColorJitter(
-                brightness=(0.95, 1.05),
-                contrast=(0.95, 1.05),
-                saturation=(0.9, 1.05),
-                hue=(-0.03, 0.03),
-            ),
-            v2.SanitizeBoundingBoxes(),
+            # v2.RandomAffine(degrees=15, scale=(0.8, 1.2), shear=2),
+            # v2.ColorJitter(
+            #     brightness=(0.95, 1.05),
+            #     contrast=(0.95, 1.05),
+            #     saturation=(0.9, 1.05),
+            #     hue=(-0.03, 0.03),
+            # ),
+            # v2.SanitizeBoundingBoxes(),
             v2.Resize(size=[params["final_height"], params["final_width"]]),
             v2.ToDtype(T.float, scale=True),
             v2.ToPureTensor(),
@@ -179,6 +181,7 @@ def check_inference(params, writer: SummaryWriter):
         remove_directory_contents(inference_dir)
 
     for image_idx, (image, _) in enumerate(test_dataset):
+        fn, ext = os.path.splitext(os.path.basename(test_dataset.annotations[image_idx]))
         inputs = {"images": image.unsqueeze(0).numpy()}
         output = ort_session.run(None, inputs)
         indices = output[1] > 0.6
@@ -196,7 +199,7 @@ def check_inference(params, writer: SummaryWriter):
         plt.figure(figsize=(12, 12))
         plt.imshow(output_image.permute(1, 2, 0))
         plt.savefig(os.path.join(inference_dir, f"{image_idx}.jpg"))
-        writer.add_image(f"validation/float_{image_idx}", output_image)
+        writer.add_image(f"validation/float_{fn}.jpg", output_image)
 
 
 def check_unit_inference(params, writer: SummaryWriter):
@@ -220,6 +223,7 @@ def check_unit_inference(params, writer: SummaryWriter):
         remove_directory_contents(inference_dir)
 
     for image_idx, (image, _) in enumerate(test_dataset):
+        fn, ext = os.path.splitext(os.path.basename(test_dataset.annotations[image_idx]))
         inputs = {"images": image.unsqueeze(0).numpy()}
         output = ort_session.run(None, inputs)
         indices = output[1] > 0.6
@@ -237,20 +241,16 @@ def check_unit_inference(params, writer: SummaryWriter):
         plt.figure(figsize=(12, 12))
         plt.imshow(output_image.permute(1, 2, 0))
         plt.savefig(os.path.join(inference_dir, f"{image_idx}.jpg"))
-        writer.add_image(f"validation/uint_{image_idx}", output_image)
+        writer.add_image(f"validation/uint_{fn}.jpg", output_image)
+
         
 
 
 if __name__ == "__main__":
-    device = T.device("cuda") if T.cuda.is_available() else T.device("cpu")
-    if T.cuda.is_available():
-        print(f"Number of available GPUs: {T.cuda.device_count()}")
-    else:
-        print("No CUDA-enabled GPU is available.")
-
     parser = argparse.ArgumentParser()
     parser.add_argument("--prefix", type=str, default="")
     parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--rounds", type=int, default=1)
     parser.add_argument("--lr", type=float, default=0.15)
     parser.add_argument("--width", type=int, default=640)
@@ -264,6 +264,7 @@ if __name__ == "__main__":
     print(f"Prefix {args.prefix}")
     print(f"Training rounds {args.rounds}")
     print(f"Training epochs {args.epochs}")
+    print(f"Training seed {args.seed}")
     print(f"Learning rate {args.lr}")
     print(f"Batch size {args.batch_size}")
     print(f"Final image width {args.width}")
@@ -271,6 +272,21 @@ if __name__ == "__main__":
     print(f"Samples per image {args.samples_per_image}")
     print(f"Trainable backbone layers {args.trainable_backbone_layers}")
     print(f"Comment {args.comment}")
+    
+    np.random.seed(args.seed)
+    random.seed(args.seed)
+    T.manual_seed(args.seed)
+    T.use_deterministic_algorithms(True)
+    
+    device = T.device("cuda") if T.cuda.is_available() else T.device("cpu")
+    if T.cuda.is_available():
+        T.cuda.manual_seed(args.seed)
+        T.cuda.manual_seed_all(args.seed)
+        T.backends.cudnn.deterministic = True
+        T.backends.cudnn.benchmark = False
+        print(f"Number of available GPUs: {T.cuda.device_count()}")
+    else:
+        print("No CUDA-enabled GPU is available.")
 
     if not os.path.exists(os.environ["SM_OUTPUT_DIR"]):
         os.makedirs(os.environ["SM_OUTPUT_DIR"])

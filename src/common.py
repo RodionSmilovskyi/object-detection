@@ -129,14 +129,14 @@ def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1)
     augmentation_transform = A.Compose(
         [
             A.Affine(
-                scale=(0.6, 1.4),  # Zoom in/out by 80-120%
+                scale=(0.5, 1.5),  # Zoom in/out by 80-120%
                 rotate=(-360, 360),  # Rotate by -15 to +15 degrees
-                translate_percent=(0.05, 0.05),  # Optional: translate by 0-10%
-                shear=(-5, 5),  # Optional: shear by -10 to +10 degrees
+                # translate_percent=(0.05, 0.05),  # Optional: translate by 0-10%
+                # shear=(-5, 5),  # Optional: shear by -10 to +10 degrees
             ),
-            A.Downscale(scale_range=(0.1, 0.75), interpolation_pair={'downscale': cv2.INTER_NEAREST, 'upscale': cv2.INTER_LINEAR}),
-            A.CoarseDropout(num_holes_range=(1, 2)),
-            AddRandomBackground(background_images),
+            # A.Downscale(scale_range=(0.1, 0.75), interpolation_pair={'downscale': cv2.INTER_NEAREST, 'upscale': cv2.INTER_LINEAR}),
+            # A.CoarseDropout(num_holes_range=(1, 2)),
+            # AddRandomBackground(background_images),
             A.Resize(height, width, p=1),
         ],
         bbox_params=A.BboxParams("yolo", ["class_labels"]),

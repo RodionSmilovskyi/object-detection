@@ -13,15 +13,28 @@
             "console": "integratedTerminal",
             "args": [
                 "--prefix",
-                "",
+                "ssdlite-no-transroms-trainable-backbone-0-640-640-1-2",
                 "--epochs",
-                "3",
+                "1",
                 "--rounds",
                 "1",
                 "--samples-per-image",
                 "1",
                 "--trainable-backbone-layers",
-                "0"
+                "3",
+                "--comment",
+                "'Scale 0.5-1.5, Rotate 360, 3 trainable layers'"
+            ]
+        },
+        {
+            "name": "Debug local inference",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "src/run_inference.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--prefix",
+                "infer"
             ]
         },
         {
@@ -34,15 +47,18 @@
                 "--prefix",
                 "object-detection",
                 "--job-name",
-                "ssdlite-trainable-backbone-0-640-640-1-50",
+                "ssdlite-640-640",
                 "--epochs",
-                "50",
+                "100",
                 "--rounds",
                 "1",
                 "--samples-per-image",
                 "25",
                 "--trainable-backbone-layers",
-                "0"
+                "3",
+                "--upload-training-data",
+                "--comment",
+                "'1 Round, 100 epochs, Scale 0.5-1.5, Rotate 360, 0 trainable layers, negative samples, seed 0'"
             ]
         }
     ]
