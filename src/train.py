@@ -16,6 +16,7 @@ from datasets.yolo_dataset import YoloDataset, detection_collate_fn
 from detection.engine import evaluate, train_one_epoch
 from common import (
     UintSsdLite,
+    generate_negative_samples,
     generate_samples,
     load_labels_from_json,
     make_ssdlite_model,
@@ -80,6 +81,8 @@ def train(params):
             params["final_width"],
             params["samples_per_image"],
         )
+        
+        generate_negative_samples(20, params["final_width"], params["final_height"], params["tmp_dir"])
 
         train_dataset = YoloDataset(
             params["tmp_dir"], train_transform, params["device"]

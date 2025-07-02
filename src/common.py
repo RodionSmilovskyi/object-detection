@@ -7,6 +7,7 @@ import cv2
 import torch as T
 import albumentations as A
 import torchvision
+import numpy as np
 from torchvision.models.detection._utils import retrieve_out_channels
 from torchvision.models.detection.ssdlite import (
     SSDLiteClassificationHead,
@@ -108,6 +109,81 @@ def write_lines_to_file(filepath, lines):
                 f.write(line + "\n")  # Add a newline character after each line
     except Exception as e:
         print(f"An error occurred while writing to '{filepath}': {e}")
+
+
+def generate_negative_samples(
+    num_images: int,
+    width: int,
+    height: int,
+    output_dir: str,
+    methods: list = ['solid', 'horizontal_gradient', 'vertical_gradient', 'noise'],
+    file_prefix: str = 'background'
+):
+    """
+    Generates and saves background images as JPGs with corresponding empty
+    TXT label files for use as negative samples.
+
+    Args:
+        num_images (int): The number of negative samples to generate.
+        width (int): The width of the images.
+        height (int): The height of the images.
+        output_dir (str): The directory to save the files in.
+        methods (list): A list of background generation methods to use.
+        file_prefix (str): The prefix for the saved filenames.
+    """
+    # Create the output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
+    print(f"Generating {num_images} negative samples in '{output_dir}'...")
+
+    for i in range(num_images):
+        # Choose a random generation method
+        method = random.choice(methods)
+        
+        # Create an empty image array (RGB)
+        bg_img = np.zeros((height, width, 3), dtype=np.uint8)
+
+        # Generate the background based on the chosen method
+        if method == 'solid':
+            random_color = np.random.randint(0, 256, size=3, dtype=np.uint8)
+            bg_img[:] = random_color
+        
+        elif method == 'horizontal_gradient':
+            start_color = np.random.randint(0, 256, size=3)
+            end_color = np.random.randint(0, 256, size=3)
+            for y in range(height):
+                alpha = y / (height - 1)
+                color = ((1 - alpha) * start_color + alpha * end_color).astype(np.uint8)
+                bg_img[y, :] = color
+
+        elif method == 'vertical_gradient':
+            start_color = np.random.randint(0, 256, size=3)
+            end_color = np.random.randint(0, 256, size=3)
+            for x in range(width):
+                alpha = x / (width - 1)
+                color = ((1 - alpha) * start_color + alpha * end_color).astype(np.uint8)
+                bg_img[:, x] = color
+
+        elif method == 'noise':
+            bg_img = np.random.randint(0, 256, size=(height, width, 3), dtype=np.uint8)
+        
+        # --- Save the image and create the empty label file ---
+        # Define the base filename (e.g., background_0001)
+        base_filename = f"{file_prefix}_{i+1:04d}"
+        
+        # 1. Save the JPG image
+        image_filename = f"{base_filename}.jpg"
+        image_filepath = os.path.join(output_dir, image_filename)
+        image_to_save = cv2.cvtColor(bg_img, cv2.COLOR_RGB2BGR) # Convert to BGR for OpenCV
+        cv2.imwrite(image_filepath, image_to_save)
+        
+        # 2. Create the empty TXT file
+        txt_filename = f"{base_filename}.txt"
+        txt_filepath = os.path.join(output_dir, txt_filename)
+        with open(txt_filepath, 'w') as f:
+            pass # Creates an empty file
+
+    print("✅ Generation complete!")
         
 def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1):
     remove_directory_contents(target_dir)
