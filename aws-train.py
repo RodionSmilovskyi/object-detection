@@ -55,6 +55,8 @@ if __name__ == "__main__":
             "epochs": args.epochs,
             "rounds": args.rounds,
             "seed": args.seed,
+            "batch-size": args.batch_size,
+            "lr": args.lr,
             "samples-per-image": args.samples_per_image,
             "trainable-backbone-layers": args.trainable_backbone_layers,
             "comment": args.comment

@@ -6,6 +6,7 @@ import torch as T
 import onnxruntime
 import argparse
 import random
+import shutil
 import numpy as np
 import matplotlib.pyplot as plt
 from torchvision.transforms import v2
@@ -22,6 +23,7 @@ from common import (
     make_ssdlite_model,
     remove_directory_contents,
 )
+from detection_training_config import DetectionTrainingConfig
 
 WORKDIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,16 +39,26 @@ def train(params):
 
     train_transform = v2.Compose(
         [
-            # v2.RandomAffine(degrees=15, scale=(0.8, 1.2), shear=2),
-            # v2.ColorJitter(
-            #     brightness=(0.95, 1.05),
-            #     contrast=(0.95, 1.05),
-            #     saturation=(0.9, 1.05),
-            #     hue=(-0.03, 0.03),
-            # ),
-            # v2.SanitizeBoundingBoxes(),
-            v2.Resize(size=[params["final_height"], params["final_width"]]),
             v2.ToDtype(T.float, scale=True),
+            # v2.RandomResizedCrop(
+            #     size=(params["final_height"], params["final_width"]),
+            #     scale=(0.8, 1.0),  # Keep most of the image
+            #     ratio=(0.8, 1.2)
+            # ),
+            v2.RandomHorizontalFlip(p=0.5),
+            v2.RandomRotation(
+                degrees=10,  # Small rotation to preserve object shape
+                interpolation=v2.InterpolationMode.BILINEAR
+            ),
+            
+            # # Color transforms - subtle to preserve color information
+            # v2.ColorJitter(
+            #     brightness=0.15,    # Subtle brightness changes
+            #     contrast=0.15,      # Subtle contrast changes
+            #     saturation=0.10,    # Minimal saturation change
+            #     hue=0.05           # Very minimal hue shift
+            # ),
+            v2.SanitizeBoundingBoxes(),
             v2.ToPureTensor(),
         ]
     )
@@ -61,18 +73,25 @@ def train(params):
 
     model.train()
     model.to(params["device"])
+    
+    training_config = DetectionTrainingConfig("ssd", params["rounds"] * params["epochs"], params["batch_size"], params["lr"])
+    optimizer = training_config.setup_optimizer(model)
+    scheduler_config = training_config.get_scheduler_config(optimizer, 1)
 
-    trainable_params = [p for p in model.parameters() if p.requires_grad]
-    optimizer = T.optim.SGD(trainable_params, lr=params["lr"])
-    scheduler = T.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer, T_max=params["rounds"] * params["epochs"], eta_min=0.05
-    )
     train_dir = params["train_dir"]
     test_dir = params["validation_dir"]
     
-    global_step = 0
-
+    global_step = 0 
+    best_map = 0.0
+    
     for round in range(params["rounds"]):
+        remove_directory_contents(params["tmp_dir"])
+        print("Cleaned temp directory") 
+        
+        shutil.copytree(train_dir, params["tmp_dir"], dirs_exist_ok=True)
+        print("Copied train samples to target directory") 
+        
+        generate_negative_samples(10, params["final_width"], params["final_height"], params["tmp_dir"])
         generate_samples(
             train_dir,
             params["tmp_dir"],
@@ -82,7 +101,6 @@ def train(params):
             params["samples_per_image"],
         )
         
-        generate_negative_samples(20, params["final_width"], params["final_height"], params["tmp_dir"])
 
         train_dataset = YoloDataset(
             params["tmp_dir"], train_transform, params["device"]
@@ -112,20 +130,31 @@ def train(params):
                 params["device"],
                 epoch,
                 print_freq=10,
+                scheduler=scheduler_config["scheduler"]
             )
-            scheduler.step()
+
             report = evaluate(model, data_loader_test, device=params["device"])
-            
             writer.add_scalar("train/box_regression", ml.meters["bbox_regression"].avg, global_step)
             writer.add_scalar("train/classification", ml.meters["classification"].avg, global_step)
             writer.add_scalar("train/loss", ml.meters["loss"].avg, global_step)
             writer.add_scalar("eval/avg_precision", report.coco_eval["bbox"].stats[0], global_step)
+            writer.add_scalar("eval/ap50", report.coco_eval["bbox"].stats[1], global_step)
             writer.add_scalar("eval/avg_recall", report.coco_eval["bbox"].stats[8], global_step)
+            current_map = report.coco_eval["bbox"].stats[0]
+            
+            if current_map > best_map:
+                best_map = current_map
+                T.save(model.state_dict(), os.path.join(params["model_dir"], "best_model.pth"))
+                print(f"*** New best model saved with mAP: {best_map:.4f} ***")
+                
             
             global_step = global_step + 1
             pass
 
+    checkpoint = T.load(os.path.join(params["model_dir"], "best_model.pth"))
+    model.load_state_dict(checkpoint)
     model.to(T.device("cpu"))
+    
     dummy_float_image = T.zeros(
         (1, 3, params["final_height"], params["final_width"]),
         device=T.device("cpu"),
@@ -279,14 +308,14 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     random.seed(args.seed)
     T.manual_seed(args.seed)
-    T.use_deterministic_algorithms(True)
+    # T.use_deterministic_algorithms(True)
     
     device = T.device("cuda") if T.cuda.is_available() else T.device("cpu")
     if T.cuda.is_available():
         T.cuda.manual_seed(args.seed)
         T.cuda.manual_seed_all(args.seed)
-        T.backends.cudnn.deterministic = True
-        T.backends.cudnn.benchmark = False
+        # T.backends.cudnn.deterministic = True
+        # T.backends.cudnn.benchmark = False
         print(f"Number of available GPUs: {T.cuda.device_count()}")
     else:
         print("No CUDA-enabled GPU is available.")

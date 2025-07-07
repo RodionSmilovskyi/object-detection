@@ -118,8 +118,11 @@ class YoloDataset(Dataset):
 
         else:
             target = {
-                "boxes": T.empty(
-                    (0, 4), dtype=T.long, device=self.device
+                "boxes": tv_tensors.BoundingBoxes(
+                    T.empty((0, 4), dtype=T.long, device=self.device),
+                    format="XYXY",
+                    canvas_size=F.get_size(img),
+                    device=self.device,
                 ),  # No boxes, so shape is (0, 4)
                 "labels": T.empty(
                     0, dtype=T.long, device=self.device

@@ -9,31 +9,33 @@ import albumentations as A
 import torchvision
 import numpy as np
 from torchvision.models.detection._utils import retrieve_out_channels
-from torchvision.models.detection.ssdlite import (
-    SSDLiteClassificationHead,
-    SSDLiteRegressionHead
-)
+from torchvision.models.detection.ssdlite import SSDLiteHead
+from functools import partial
 
 from transforms.add_random_background import BACKGROUND_DIR, AddRandomBackground
 from transforms.merge_images import merge_images_horizontally, read_annotation
 
-def make_ssdlite_model(labels, trainable_backbone_layers = 0):
+
+def make_ssdlite_model(labels, trainable_backbone_layers=0):
     num_classes = len(labels)
-    model = torchvision.models.detection.ssdlite320_mobilenet_v3_large(weight="COCO_V1", trainable_backbone_layers = trainable_backbone_layers)
-    out_channels = retrieve_out_channels(model.backbone, (320, 320))
+    model = torchvision.models.detection.ssdlite320_mobilenet_v3_large(
+        weight="COCO_V1", trainable_backbone_layers=trainable_backbone_layers
+    )
+    in_channels = retrieve_out_channels(model.backbone, (320, 320))
     num_anchors = model.anchor_generator.num_anchors_per_location()
-    classification_head = SSDLiteClassificationHead(
-        in_channels=out_channels,
+    norm_layer = partial(T.nn.BatchNorm2d, eps=0.001, momentum=0.03)
+    model.head = SSDLiteHead(
+        in_channels=in_channels,
         num_anchors=num_anchors,
         num_classes=num_classes,
-        norm_layer=T.nn.BatchNorm2d
+        norm_layer=norm_layer,
     )
     
-    regression_head = SSDLiteRegressionHead(in_channels=out_channels, num_anchors=num_anchors, norm_layer=T.nn.BatchNorm2d)
-    model.head.classification_head = classification_head
-    model.head.regression_head = regression_head
-    
+
+
+
     return model
+
 
 def load_labels_from_json(json_file_path):
     """
@@ -55,7 +57,8 @@ def load_labels_from_json(json_file_path):
     except json.JSONDecodeError:
         print(f"Error: Invalid JSON format in '{json_file_path}'.")
         return None
-    
+
+
 def remove_directory_contents(directory_path):
     """Removes all files and subdirectories within the specified directory.
 
@@ -75,6 +78,7 @@ def remove_directory_contents(directory_path):
     except OSError as e:
         print(f"Error removing contents of {directory_path}: {e}")
 
+
 def get_image_for_transform(annotation, source_dir, class_list):
     fn, ext = os.path.splitext(os.path.basename(annotation))
     img_name = fn + ".jpg"
@@ -82,6 +86,7 @@ def get_image_for_transform(annotation, source_dir, class_list):
     bboxes, category_ids = read_annotation(os.path.join(source_dir, annotation))
 
     return image, bboxes, category_ids, [class_list[i] for i in category_ids]
+
 
 def save_transform(data, category_ids, target_dir, fn):
     lines = []
@@ -95,7 +100,8 @@ def save_transform(data, category_ids, target_dir, fn):
         os.path.join(target_dir, new_image_name),
         cv2.cvtColor(data["image"], cv2.COLOR_BGR2RGB),
     )
-    
+
+
 def write_lines_to_file(filepath, lines):
     """Creates a file (or overwrites if it exists) and writes a list of lines to it.
 
@@ -116,8 +122,8 @@ def generate_negative_samples(
     width: int,
     height: int,
     output_dir: str,
-    methods: list = ['solid', 'horizontal_gradient', 'vertical_gradient', 'noise'],
-    file_prefix: str = 'background'
+    methods: list = ["solid", "horizontal_gradient", "vertical_gradient", "noise"],
+    file_prefix: str = "background",
 ):
     """
     Generates and saves background images as JPGs with corresponding empty
@@ -133,22 +139,22 @@ def generate_negative_samples(
     """
     # Create the output directory if it doesn't exist
     os.makedirs(output_dir, exist_ok=True)
-    
+
     print(f"Generating {num_images} negative samples in '{output_dir}'...")
 
     for i in range(num_images):
         # Choose a random generation method
         method = random.choice(methods)
-        
+
         # Create an empty image array (RGB)
         bg_img = np.zeros((height, width, 3), dtype=np.uint8)
 
         # Generate the background based on the chosen method
-        if method == 'solid':
+        if method == "solid":
             random_color = np.random.randint(0, 256, size=3, dtype=np.uint8)
             bg_img[:] = random_color
-        
-        elif method == 'horizontal_gradient':
+
+        elif method == "horizontal_gradient":
             start_color = np.random.randint(0, 256, size=3)
             end_color = np.random.randint(0, 256, size=3)
             for y in range(height):
@@ -156,7 +162,7 @@ def generate_negative_samples(
                 color = ((1 - alpha) * start_color + alpha * end_color).astype(np.uint8)
                 bg_img[y, :] = color
 
-        elif method == 'vertical_gradient':
+        elif method == "vertical_gradient":
             start_color = np.random.randint(0, 256, size=3)
             end_color = np.random.randint(0, 256, size=3)
             for x in range(width):
@@ -164,56 +170,93 @@ def generate_negative_samples(
                 color = ((1 - alpha) * start_color + alpha * end_color).astype(np.uint8)
                 bg_img[:, x] = color
 
-        elif method == 'noise':
+        elif method == "noise":
             bg_img = np.random.randint(0, 256, size=(height, width, 3), dtype=np.uint8)
-        
+
         # --- Save the image and create the empty label file ---
         # Define the base filename (e.g., background_0001)
         base_filename = f"{file_prefix}_{i+1:04d}"
-        
+
         # 1. Save the JPG image
         image_filename = f"{base_filename}.jpg"
         image_filepath = os.path.join(output_dir, image_filename)
-        image_to_save = cv2.cvtColor(bg_img, cv2.COLOR_RGB2BGR) # Convert to BGR for OpenCV
+        image_to_save = cv2.cvtColor(
+            bg_img, cv2.COLOR_RGB2BGR
+        )  # Convert to BGR for OpenCV
         cv2.imwrite(image_filepath, image_to_save)
-        
+
         # 2. Create the empty TXT file
         txt_filename = f"{base_filename}.txt"
         txt_filepath = os.path.join(output_dir, txt_filename)
-        with open(txt_filepath, 'w') as f:
-            pass # Creates an empty file
+        with open(txt_filepath, "w") as f:
+            pass  # Creates an empty file
 
     print("✅ Generation complete!")
-        
-def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1):
-    remove_directory_contents(target_dir)
-    print("Cleaned target directory")   
 
+
+def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1):
     class_list = load_labels_from_json(json_file_path)
-    annotations = [
-        f for f in os.listdir(source_dir) if f.endswith(".txt")
-    ]
-    bckg_paths = [
-        os.path.join(BACKGROUND_DIR, f)
-        for f in os.listdir(BACKGROUND_DIR)
-        if f.endswith(".jpg")
-    ]
-    background_images = [
-        cv2.resize(cv2.imread(path), (width, height)) for path in bckg_paths
-    ]
-    
+    annotations = [f for f in os.listdir(target_dir) if f.endswith(".txt")]
+
     augmentation_transform = A.Compose(
         [
-            A.Affine(
-                scale=(0.5, 1.5),  # Zoom in/out by 80-120%
-                rotate=(-360, 360),  # Rotate by -15 to +15 degrees
-                # translate_percent=(0.05, 0.05),  # Optional: translate by 0-10%
-                # shear=(-5, 5),  # Optional: shear by -10 to +10 degrees
+            # Geometric transformations
+            A.OneOf(
+                [
+                    A.Resize(height, width, p=0.2),
+                    A.RandomResizedCrop(
+                        size=(height, width),
+                        scale=(0.7, 1.0),
+                        ratio=(0.8, 1.2),
+                        interpolation=cv2.INTER_LINEAR,
+                        p=0.8,
+                    ),
+                ], p=1
             ),
-            # A.Downscale(scale_range=(0.1, 0.75), interpolation_pair={'downscale': cv2.INTER_NEAREST, 'upscale': cv2.INTER_LINEAR}),
-            # A.CoarseDropout(num_holes_range=(1, 2)),
-            # AddRandomBackground(background_images),
-            A.Resize(height, width, p=1),
+            A.HorizontalFlip(p=0.5),
+            A.VerticalFlip(p=0.1),  # Rare for groceries
+            A.Rotate(
+                limit=15,
+                interpolation=cv2.INTER_LINEAR,
+                border_mode=cv2.BORDER_CONSTANT,
+                p=0.7,
+            ),
+            A.ShiftScaleRotate(
+                shift_limit=0.1,
+                scale_limit=0.1,
+                rotate_limit=10,
+                interpolation=cv2.INTER_LINEAR,
+                border_mode=cv2.BORDER_CONSTANT,
+                p=0.6,
+            ),
+            # Perspective and distortion
+            A.Perspective(scale=(0.05, 0.1), keep_size=True, p=0.3),
+            A.ElasticTransform(
+                alpha=50,
+                sigma=10,
+                interpolation=cv2.INTER_LINEAR,
+                p=0.2,
+            ),
+            # Lighting and color - conservative for color preservation
+            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.6),
+            A.HueSaturationValue(
+                hue_shift_limit=10,  # Small hue shifts
+                sat_shift_limit=15,  # Small saturation shifts
+                val_shift_limit=15,  # Small value shifts
+                p=0.4,
+            ),
+            A.RandomGamma(gamma_limit=(80, 120), p=0.3),
+            # Lighting simulation
+            A.RandomShadow(
+                shadow_roi=(0, 0.5, 1, 1),
+                num_shadows_limit=(1,2),
+                shadow_dimension=5,
+                p=0.2,
+            ),
+            A.RandomSunFlare(
+                num_flare_circles_range=(1,2),
+                p=0.1,
+            ),
         ],
         bbox_params=A.BboxParams("yolo", ["class_labels"]),
     )
@@ -221,11 +264,11 @@ def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1)
     resize_transform = A.Compose(
         [A.Resize(height, width)], bbox_params=A.BboxParams("yolo", ["class_labels"])
     )
-    
+
     for annotation in annotations:
         fn, ext = os.path.splitext(os.path.basename(annotation))
         image, bboxes, category_ids, class_labels = get_image_for_transform(
-            annotation, source_dir, class_list
+            annotation, target_dir, class_list
         )
 
         resized_image = resize_transform(
@@ -234,42 +277,21 @@ def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1)
         save_transform(resized_image, category_ids, target_dir, fn)
 
         for i in range(n):
-            annotation_to_merge = random.choice(
-                [f for f in annotations if f != annotation]
-            )
-            fn_m, ext_m = os.path.splitext(os.path.basename(annotation_to_merge))
-            merged_image = merge_images_horizontally(
-                os.path.join(source_dir, annotation),
-                os.path.join(source_dir, annotation_to_merge),
-                class_list,
-            )
-            augmented_merged_image = augmentation_transform(
-                image=merged_image["image"],
-                bboxes=merged_image["bboxes"],
-                class_labels=merged_image["class_labels"],
-            )
-
-            save_transform(
-                augmented_merged_image,
-                merged_image["category_ids"],
-                target_dir,
-                f"{fn}-{fn_m}-{i}",
-            )
-
             augmented_image = augmentation_transform(
-                image=resized_image["image"],
-                bboxes=resized_image["bboxes"],
-                class_labels=resized_image["class_labels"],
+                image=image,
+                bboxes=bboxes,
+                class_labels=class_labels,
             )
             save_transform(augmented_image, category_ids, target_dir, f"{fn}-{i}")
-    
+
+
 class UintSsdLite(T.nn.Module):
     def __init__(self, ssd_lite_model):
         super().__init__()
         self.ssd_lite_model = ssd_lite_model
-        
+
     def forward(self, img_uint8: T.tensor):
         image_float = img_uint8.to(T.float32)
         image_float = image_float / 255.0
-        
+
         return self.ssd_lite_model.forward(image_float)
