@@ -221,42 +221,42 @@ def generate_samples(source_dir, target_dir, json_file_path, width, height, n=1)
                 border_mode=cv2.BORDER_CONSTANT,
                 p=0.7,
             ),
-            A.ShiftScaleRotate(
-                shift_limit=0.1,
-                scale_limit=0.1,
-                rotate_limit=10,
-                interpolation=cv2.INTER_LINEAR,
-                border_mode=cv2.BORDER_CONSTANT,
-                p=0.6,
-            ),
-            # Perspective and distortion
-            A.Perspective(scale=(0.05, 0.1), keep_size=True, p=0.3),
-            A.ElasticTransform(
-                alpha=50,
-                sigma=10,
-                interpolation=cv2.INTER_LINEAR,
-                p=0.2,
-            ),
+            # A.ShiftScaleRotate(
+            #     shift_limit=0.1,
+            #     scale_limit=0.1,
+            #     rotate_limit=10,
+            #     interpolation=cv2.INTER_LINEAR,
+            #     border_mode=cv2.BORDER_CONSTANT,
+            #     p=0.6,
+            # ),
+            # # Perspective and distortion
+            # A.Perspective(scale=(0.05, 0.1), keep_size=True, p=0.3),
+            # A.ElasticTransform(
+            #     alpha=50,
+            #     sigma=10,
+            #     interpolation=cv2.INTER_LINEAR,
+            #     p=0.2,
+            # ),
             # Lighting and color - conservative for color preservation
-            A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.6),
-            A.HueSaturationValue(
-                hue_shift_limit=10,  # Small hue shifts
-                sat_shift_limit=15,  # Small saturation shifts
-                val_shift_limit=15,  # Small value shifts
-                p=0.4,
-            ),
-            A.RandomGamma(gamma_limit=(80, 120), p=0.3),
+            # A.RandomBrightnessContrast(brightness_limit=0.2, contrast_limit=0.2, p=0.6),
+            # A.HueSaturationValue(
+            #     hue_shift_limit=10,  # Small hue shifts
+            #     sat_shift_limit=15,  # Small saturation shifts
+            #     val_shift_limit=15,  # Small value shifts
+            #     p=0.4,
+            # ),
+            # A.RandomGamma(gamma_limit=(80, 120), p=0.3),
             # Lighting simulation
-            A.RandomShadow(
-                shadow_roi=(0, 0.5, 1, 1),
-                num_shadows_limit=(1,2),
-                shadow_dimension=5,
-                p=0.2,
-            ),
-            A.RandomSunFlare(
-                num_flare_circles_range=(1,2),
-                p=0.1,
-            ),
+            # A.RandomShadow(
+            #     shadow_roi=(0, 0.5, 1, 1),
+            #     num_shadows_limit=(1,2),
+            #     shadow_dimension=5,
+            #     p=0.2,
+            # ),
+            # A.RandomSunFlare(
+            #     num_flare_circles_range=(1,2),
+            #     p=0.1,
+            # ),
         ],
         bbox_params=A.BboxParams("yolo", ["class_labels"]),
     )

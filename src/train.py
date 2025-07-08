@@ -34,7 +34,7 @@ def train(params):
     model = make_ssdlite_model(labels, params["trainable_backbone_layers"])
 
     print("Obtained model")
-    
+
     writer.add_text("description", params["comment"])
 
     train_transform = v2.Compose(
@@ -48,9 +48,8 @@ def train(params):
             v2.RandomHorizontalFlip(p=0.5),
             v2.RandomRotation(
                 degrees=10,  # Small rotation to preserve object shape
-                interpolation=v2.InterpolationMode.BILINEAR
+                interpolation=v2.InterpolationMode.BILINEAR,
             ),
-            
             # # Color transforms - subtle to preserve color information
             # v2.ColorJitter(
             #     brightness=0.15,    # Subtle brightness changes
@@ -73,25 +72,28 @@ def train(params):
 
     model.train()
     model.to(params["device"])
-    
-    training_config = DetectionTrainingConfig("ssd", params["rounds"] * params["epochs"], params["batch_size"], params["lr"])
+
+    training_config = DetectionTrainingConfig(
+        "ssd", params["rounds"] * params["epochs"], params["batch_size"], params["lr"]
+    )
     optimizer = training_config.setup_optimizer(model)
     scheduler_config = training_config.get_scheduler_config(optimizer, 1)
 
     train_dir = params["train_dir"]
     test_dir = params["validation_dir"]
-    
-    global_step = 0 
-    best_map = 0.0
-    
+
+    global_epoch = 0
+    best_mAP = 0.0
+    best_mAR = 0.0
+
     for round in range(params["rounds"]):
         remove_directory_contents(params["tmp_dir"])
-        print("Cleaned temp directory") 
-        
+        print("Cleaned temp directory")
+
         shutil.copytree(train_dir, params["tmp_dir"], dirs_exist_ok=True)
-        print("Copied train samples to target directory") 
-        
-        generate_negative_samples(10, params["final_width"], params["final_height"], params["tmp_dir"])
+        print("Copied train samples to target directory")
+
+        # generate_negative_samples(10, params["final_width"], params["final_height"], params["tmp_dir"])
         generate_samples(
             train_dir,
             params["tmp_dir"],
@@ -100,7 +102,6 @@ def train(params):
             params["final_width"],
             params["samples_per_image"],
         )
-        
 
         train_dataset = YoloDataset(
             params["tmp_dir"], train_transform, params["device"]
@@ -130,31 +131,64 @@ def train(params):
                 params["device"],
                 epoch,
                 print_freq=10,
-                scheduler=scheduler_config["scheduler"]
+                scheduler=scheduler_config["scheduler"],
             )
 
             report = evaluate(model, data_loader_test, device=params["device"])
-            writer.add_scalar("train/box_regression", ml.meters["bbox_regression"].avg, global_step)
-            writer.add_scalar("train/classification", ml.meters["classification"].avg, global_step)
-            writer.add_scalar("train/loss", ml.meters["loss"].avg, global_step)
-            writer.add_scalar("eval/avg_precision", report.coco_eval["bbox"].stats[0], global_step)
-            writer.add_scalar("eval/ap50", report.coco_eval["bbox"].stats[1], global_step)
-            writer.add_scalar("eval/avg_recall", report.coco_eval["bbox"].stats[8], global_step)
-            current_map = report.coco_eval["bbox"].stats[0]
-            
-            if current_map > best_map:
-                best_map = current_map
-                T.save(model.state_dict(), os.path.join(params["model_dir"], "best_model.pth"))
-                print(f"*** New best model saved with mAP: {best_map:.4f} ***")
-                
-            
-            global_step = global_step + 1
+            writer.add_scalar(
+                "train/box_regression", ml.meters["bbox_regression"].avg, global_epoch
+            )
+            writer.add_scalar(
+                "train/classification", ml.meters["classification"].avg, global_epoch
+            )
+            writer.add_scalar("train/loss", ml.meters["loss"].avg, global_epoch)
+            writer.add_scalar(
+                "eval/avg_precision", report.coco_eval["bbox"].stats[0], global_epoch
+            )
+            writer.add_scalar(
+                "eval/ap50", report.coco_eval["bbox"].stats[1], global_epoch
+            )
+            writer.add_scalar(
+                "eval/avg_recall", report.coco_eval["bbox"].stats[8], global_epoch
+            )
+
+            current_mAP = report.coco_eval["bbox"].stats[0]
+            current_mAR = report.coco_eval["bbox"].stats[8]
+
+            if current_mAP > best_mAP:
+                best_mAP = current_mAP
+                T.save(
+                    model.state_dict(),
+                    os.path.join(params["model_dir"], "best_model.pth"),
+                )
+                print(
+                    f"*** New best model saved with mAP: {best_mAP:.4f}, epoch {epoch}, global epoch {global_epoch}***"
+                )
+
+            if current_mAR > best_mAR:
+                best_mAR = current_mAR
+
+            global_epoch = global_epoch + 1
             pass
+
+    writer.add_hparams(
+        {
+            "prefix": params["prefix"],
+            "batch_size": params["batch_size"],
+            "epochs": params["epochs"],
+            "rounds": params["rounds"],
+            "trainable_backbone_layers": params["trainable_backbone_layers"],
+            "lr": params["lr"],
+            "samples_per_image": params["samples_per_image"],
+            "comment": params["comment"],
+        },
+        {"hparam/mAP": best_mAP, "hparam/mAR": best_mAR},
+    )
 
     checkpoint = T.load(os.path.join(params["model_dir"], "best_model.pth"))
     model.load_state_dict(checkpoint)
     model.to(T.device("cpu"))
-    
+
     dummy_float_image = T.zeros(
         (1, 3, params["final_height"], params["final_width"]),
         device=T.device("cpu"),
@@ -213,7 +247,9 @@ def check_inference(params, writer: SummaryWriter):
         remove_directory_contents(inference_dir)
 
     for image_idx, (image, _) in enumerate(test_dataset):
-        fn, ext = os.path.splitext(os.path.basename(test_dataset.annotations[image_idx]))
+        fn, ext = os.path.splitext(
+            os.path.basename(test_dataset.annotations[image_idx])
+        )
         inputs = {"images": image.unsqueeze(0).numpy()}
         output = ort_session.run(None, inputs)
         indices = output[1] > 0.6
@@ -255,7 +291,9 @@ def check_unit_inference(params, writer: SummaryWriter):
         remove_directory_contents(inference_dir)
 
     for image_idx, (image, _) in enumerate(test_dataset):
-        fn, ext = os.path.splitext(os.path.basename(test_dataset.annotations[image_idx]))
+        fn, ext = os.path.splitext(
+            os.path.basename(test_dataset.annotations[image_idx])
+        )
         inputs = {"images": image.unsqueeze(0).numpy()}
         output = ort_session.run(None, inputs)
         indices = output[1] > 0.6
@@ -274,8 +312,6 @@ def check_unit_inference(params, writer: SummaryWriter):
         plt.imshow(output_image.permute(1, 2, 0))
         plt.savefig(os.path.join(inference_dir, f"{image_idx}.jpg"))
         writer.add_image(f"validation/uint_{fn}.jpg", output_image)
-
-        
 
 
 if __name__ == "__main__":
@@ -304,12 +340,12 @@ if __name__ == "__main__":
     print(f"Samples per image {args.samples_per_image}")
     print(f"Trainable backbone layers {args.trainable_backbone_layers}")
     print(f"Comment {args.comment}")
-    
+
     np.random.seed(args.seed)
     random.seed(args.seed)
     T.manual_seed(args.seed)
     # T.use_deterministic_algorithms(True)
-    
+
     device = T.device("cuda") if T.cuda.is_available() else T.device("cpu")
     if T.cuda.is_available():
         T.cuda.manual_seed(args.seed)
